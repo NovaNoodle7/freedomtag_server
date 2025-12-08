@@ -1112,99 +1112,64 @@ var DatabaseStorage = class {
   }
   async seedData() {
     try {
+      if (!supabase) {
+        console.error("Supabase is not configured. Please set SUPABASE_URL and SUPABASE_KEY environment variables. Skipping seed.");
+        return;
+      }
+      const { data: chainsData, error: chainsError } = await supabase.from("merchant_chains").select("*");
       let existingChains = [];
-      if (supabase) {
-        const { data, error } = await supabase.from("merchant_chains").select("*");
-        if (error) {
-          console.error("Supabase seed merchant chains check error:", error.message || error);
-          existingChains = [];
-        } else {
-          existingChains = data;
-        }
+      if (chainsError) {
+        console.error("Supabase seed merchant chains check error:", chainsError.message || chainsError);
+        existingChains = [];
       } else {
-        existingChains = await db.select().from(merchantChains);
+        existingChains = chainsData || [];
       }
       if (existingChains.length > 0) {
         return;
       }
       let existingOrgs = [];
       let existingTags = [];
-      if (supabase) {
-        const [orgsRes, tagsRes] = await Promise.all([
-          supabase.from("organizations").select("*"),
-          supabase.from("tags").select("*")
-        ]);
-        if (orgsRes.error) {
-          console.error("Supabase seed organizations check error:", orgsRes.error.message || orgsRes.error);
-          existingOrgs = [];
-        } else {
-          existingOrgs = orgsRes.data || [];
-        }
-        if (tagsRes.error) {
-          console.error("Supabase seed tags check error:", tagsRes.error.message || tagsRes.error);
-          existingTags = [];
-        } else {
-          existingTags = tagsRes.data || [];
-        }
+      const [orgsRes, tagsRes] = await Promise.all([
+        supabase.from("organizations").select("*"),
+        supabase.from("tags").select("*")
+      ]);
+      if (orgsRes.error) {
+        console.error("Supabase seed organizations check error:", orgsRes.error.message || orgsRes.error);
+        existingOrgs = [];
       } else {
-        existingOrgs = await db.select().from(organizations);
-        existingTags = await db.select().from(tags);
+        existingOrgs = orgsRes.data || [];
+      }
+      if (tagsRes.error) {
+        console.error("Supabase seed tags check error:", tagsRes.error.message || tagsRes.error);
+        existingTags = [];
+      } else {
+        existingTags = tagsRes.data || [];
       }
       if (existingOrgs.length > 0 && existingTags.length > 0) {
         await this.seedMerchantChainsOnly();
         return;
       }
-      let havenShelter;
-      if (supabase) {
-        const { data, error } = await supabase.from("organizations").insert(snakeifyRow({
-          name: "Haven Shelter",
-          type: "Shelter for Homeless",
-          parentId: null
-        })).select().maybeSingle();
-        if (error) throw error;
-        havenShelter = camelizeRow(data);
-      } else {
-        const [row] = await db.insert(organizations).values({
-          name: "Haven Shelter",
-          type: "Shelter for Homeless",
-          parentId: null
-        }).returning();
-        havenShelter = row;
-      }
-      let pickNPayFoundation;
-      if (supabase) {
-        const { data, error } = await supabase.from("organizations").insert(snakeifyRow({
-          name: "Pick n Pay Foundation",
-          type: "Corporate Foundation",
-          parentId: null
-        })).select().maybeSingle();
-        if (error) throw error;
-        pickNPayFoundation = camelizeRow(data);
-      } else {
-        const [row] = await db.insert(organizations).values({
-          name: "Pick n Pay Foundation",
-          type: "Corporate Foundation",
-          parentId: null
-        }).returning();
-        pickNPayFoundation = row;
-      }
-      let studentAid;
-      if (supabase) {
-        const { data, error } = await supabase.from("organizations").insert(snakeifyRow({
-          name: "Student Aid Program",
-          type: "Educational Support",
-          parentId: pickNPayFoundation.id
-        })).select().maybeSingle();
-        if (error) throw error;
-        studentAid = camelizeRow(data);
-      } else {
-        const [row] = await db.insert(organizations).values({
-          name: "Student Aid Program",
-          type: "Educational Support",
-          parentId: pickNPayFoundation.id
-        }).returning();
-        studentAid = row;
-      }
+      const { data: hsOrgData, error: hsOrgError } = await supabase.from("organizations").insert(snakeifyRow({
+        name: "Haven Shelter",
+        type: "Shelter for Homeless",
+        parentId: null
+      })).select().maybeSingle();
+      if (hsOrgError) throw hsOrgError;
+      const havenShelter = camelizeRow(hsOrgData);
+      const { data: pnpOrgData, error: pnpOrgError } = await supabase.from("organizations").insert(snakeifyRow({
+        name: "Pick n Pay Foundation",
+        type: "Corporate Foundation",
+        parentId: null
+      })).select().maybeSingle();
+      if (pnpOrgError) throw pnpOrgError;
+      const pickNPayFoundation = camelizeRow(pnpOrgData);
+      const { data: saOrgData, error: saOrgError } = await supabase.from("organizations").insert(snakeifyRow({
+        name: "Student Aid Program",
+        type: "Educational Support",
+        parentId: pickNPayFoundation.id
+      })).select().maybeSingle();
+      if (saOrgError) throw saOrgError;
+      const studentAid = camelizeRow(saOrgData);
       const tagData = [
         // Haven Shelter - Homeless beneficiaries
         { code: "CT001", pin: "1234", orgId: havenShelter.id, type: "Homeless", name: "John Doe" },
@@ -1303,35 +1268,18 @@ var DatabaseStorage = class {
           throw new Error("Neither Supabase nor Drizzle DB is configured. Cannot seed demo data.");
         }
       }
-      let pickNPayChain;
-      let havenShelterChain;
-      if (supabase) {
-        const { data: pnpData, error: pnpErr } = await supabase.from("merchant_chains").insert(snakeifyRow({
-          name: "Pick n Pay",
-          description: "Leading South African supermarket chain"
-        })).select().maybeSingle();
-        if (pnpErr) throw pnpErr;
-        pickNPayChain = camelizeRow(pnpData);
-        const { data: hsData, error: hsErr } = await supabase.from("merchant_chains").insert(snakeifyRow({
-          name: "Haven Shelter",
-          description: "Shelter and support services for the homeless"
-        })).select().maybeSingle();
-        if (hsErr) throw hsErr;
-        havenShelterChain = camelizeRow(hsData);
-      } else if (db) {
-        const [pnpRow] = await db.insert(merchantChains).values({
-          name: "Pick n Pay",
-          description: "Leading South African supermarket chain"
-        }).returning();
-        pickNPayChain = pnpRow;
-        const [hsRow] = await db.insert(merchantChains).values({
-          name: "Haven Shelter",
-          description: "Shelter and support services for the homeless"
-        }).returning();
-        havenShelterChain = hsRow;
-      } else {
-        throw new Error("Neither Supabase nor Drizzle DB is configured. Cannot seed merchant chains.");
-      }
+      const { data: pnpChainData, error: pnpChainErr } = await supabase.from("merchant_chains").insert(snakeifyRow({
+        name: "Pick n Pay",
+        description: "Leading South African supermarket chain"
+      })).select().maybeSingle();
+      if (pnpChainErr) throw pnpChainErr;
+      const pickNPayChain = camelizeRow(pnpChainData);
+      const { data: hsChainData, error: hsChainErr } = await supabase.from("merchant_chains").insert(snakeifyRow({
+        name: "Haven Shelter",
+        description: "Shelter and support services for the homeless"
+      })).select().maybeSingle();
+      if (hsChainErr) throw hsChainErr;
+      const havenShelterChain = camelizeRow(hsChainData);
       const pickNPayOutlets = [
         { town: "Cape Town CBD", region: "Western Cape" },
         { town: "Johannesburg Sandton", region: "Gauteng" },
@@ -1357,85 +1305,39 @@ var DatabaseStorage = class {
         { town: "Randburg", region: "Gauteng" }
       ];
       for (const { town, region } of pickNPayOutlets) {
-        let wallet;
-        if (supabase) {
-          const { data, error } = await supabase.from("wallets").insert(snakeifyRow({
-            type: "MERCHANT",
-            name: `Pick n Pay - ${town}`,
-            balanceZar: 0
-          })).select().maybeSingle();
-          if (error) throw error;
-          wallet = camelizeRow(data);
-        } else if (db) {
-          const [row] = await db.insert(wallets).values({
-            type: "MERCHANT",
-            name: `Pick n Pay - ${town}`,
-            balanceZAR: 0
-          }).returning();
-          wallet = row;
-        } else {
-          throw new Error("Neither Supabase nor Drizzle DB is configured. Cannot seed merchant outlets.");
-        }
-        if (supabase) {
-          const { error } = await supabase.from("merchant_outlets").insert(snakeifyRow({
-            chainId: pickNPayChain.id,
-            walletId: wallet.id,
-            displayName: `Pick n Pay - ${town}`,
-            town,
-            region,
-            status: "active"
-          }));
-          if (error) throw error;
-        } else if (db) {
-          await db.insert(merchantOutlets).values({
-            chainId: pickNPayChain.id,
-            walletId: wallet.id,
-            displayName: `Pick n Pay - ${town}`,
-            town,
-            region,
-            status: "active"
-          });
-        }
-      }
-      let havenWallet;
-      if (supabase) {
-        const { data, error } = await supabase.from("wallets").insert(snakeifyRow({
+        const { data: walletData, error: walletError } = await supabase.from("wallets").insert(snakeifyRow({
           type: "MERCHANT",
-          name: "Haven Shelter - Cape Town",
+          name: `Pick n Pay - ${town}`,
           balanceZar: 0
         })).select().maybeSingle();
-        if (error) throw error;
-        havenWallet = camelizeRow(data);
-      } else if (db) {
-        const [row] = await db.insert(wallets).values({
-          type: "MERCHANT",
-          name: "Haven Shelter - Cape Town",
-          balanceZAR: 0
-        }).returning();
-        havenWallet = row;
-      } else {
-        throw new Error("Neither Supabase nor Drizzle DB is configured. Cannot seed haven shelter outlet.");
-      }
-      if (supabase) {
-        const { error } = await supabase.from("merchant_outlets").insert(snakeifyRow({
-          chainId: havenShelterChain.id,
-          walletId: havenWallet.id,
-          displayName: "Haven Shelter - Cape Town",
-          town: "Cape Town",
-          region: "Western Cape",
+        if (walletError) throw walletError;
+        const wallet = camelizeRow(walletData);
+        const { error: outletError } = await supabase.from("merchant_outlets").insert(snakeifyRow({
+          chainId: pickNPayChain.id,
+          walletId: wallet.id,
+          displayName: `Pick n Pay - ${town}`,
+          town,
+          region,
           status: "active"
         }));
-        if (error) throw error;
-      } else if (db) {
-        await db.insert(merchantOutlets).values({
-          chainId: havenShelterChain.id,
-          walletId: havenWallet.id,
-          displayName: "Haven Shelter - Cape Town",
-          town: "Cape Town",
-          region: "Western Cape",
-          status: "active"
-        });
+        if (outletError) throw outletError;
       }
+      const { data: havenWalletData, error: havenWalletError } = await supabase.from("wallets").insert(snakeifyRow({
+        type: "MERCHANT",
+        name: "Haven Shelter - Cape Town",
+        balanceZar: 0
+      })).select().maybeSingle();
+      if (havenWalletError) throw havenWalletError;
+      const havenWallet = camelizeRow(havenWalletData);
+      const { error: havenOutletError } = await supabase.from("merchant_outlets").insert(snakeifyRow({
+        chainId: havenShelterChain.id,
+        walletId: havenWallet.id,
+        displayName: "Haven Shelter - Cape Town",
+        town: "Cape Town",
+        region: "Western Cape",
+        status: "active"
+      }));
+      if (havenOutletError) throw havenOutletError;
     } catch (error) {
       console.error("Seeding failed:", error);
       throw error;
@@ -1493,18 +1395,6 @@ var DatabaseStorage = class {
     if (!user) throw new Error("User not found");
     return user;
   }
-  // async updateUserPassword(id: string, passwordHash: string): Promise<User> {
-  //   if (supabase) {
-  //     const { data, error } = await supabase.from('users').update({ password_hash: passwordHash }).eq('id', id).select().maybeSingle();
-  //     if (error) throw error;
-  //     if (!data) throw new Error('User not found');
-  //     return camelizeRow<User>(data as any);
-  //   }
-  //   // @ts-ignore - bypass mixed-drizzle typing between shared and server
-  //   const [user] = (await db!.update(users as any).set({ passwordHash }).where(eq((users as any).id, id)).returning()) as any;
-  //   if (!user) throw new Error('User not found');
-  //   return user as User;
-  // }
   async getUserRoles(userId) {
     if (supabase) {
       const { data, error } = await supabase.from("user_roles").select("*").eq("user_id", userId);
@@ -3033,6 +2923,7 @@ var router = express.Router();
 router.post("/auth/signup", async (req, res) => {
   try {
     const { email, password, fullName, phone, country, role } = req.body || {};
+    console.log("test=====>", { email, password, fullName, phone, country, role });
     if (!email || !password || !fullName || !role) {
       return res.status(400).json({ error: "email, password, fullName, and role are required" });
     }
@@ -7204,10 +7095,10 @@ app.use((req, res, next) => {
   await setupClientProxy(app, server);
   const port = parseInt(process.env.PORT || "3000", 10);
   server.listen({
-    port: 3000,
+    port: 3e3,
     host: "0.0.0.0",
     reusePort: true
   }, () => {
-    // log(`serving on port ${port}`);
+    log(`serving on port ${port}`);
   });
 })();
