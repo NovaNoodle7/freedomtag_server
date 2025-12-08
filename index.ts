@@ -5,7 +5,16 @@ import session from "express-session";
 import { registerRoutes } from "./routes";
 import { setupClientProxy, log } from "./vite";
 import { createSumsubClient, DemoSumsubClient } from "./sumsub";
-import "dotenv/config";
+
+// Debug: Log environment variables (masked for security)
+if (process.env.NODE_ENV === 'production') {
+  console.log('🔍 Environment Check:');
+  console.log('  NODE_ENV:', process.env.NODE_ENV);
+  console.log('  SESSION_SECRET:', process.env.SESSION_SECRET ? '✅ Set' : '❌ Missing');
+  console.log('  SUPABASE_URL:', process.env.SUPABASE_URL ? '✅ Set' : '❌ Missing');
+  console.log('  SUPABASE_KEY:', (process.env.SUPABASE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY) ? '✅ Set' : '❌ Missing');
+  console.log('  PORT:', process.env.PORT || '3000 (default)');
+}
 
 
 const app = express();
