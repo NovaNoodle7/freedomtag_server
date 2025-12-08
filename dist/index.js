@@ -7204,10 +7204,10 @@ app.use((req, res, next) => {
   await setupClientProxy(app, server);
   const port = parseInt(process.env.PORT || "3000", 10);
   server.listen({
-    port,
+    port: 3000,
     host: "0.0.0.0",
     reusePort: true
   }, () => {
-    log(`serving on port ${port}`);
+    // log(`serving on port ${port}`);
   });
 })();
