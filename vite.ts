@@ -53,13 +53,23 @@ export async function setupClientProxy(app: Express, server: Server) {
   }
 
   // In production, fall back to serving static client files
+  // const distPath = path.resolve(__dirname, "..", "client", "dist");
+
+  // if (!fs.existsSync(distPath)) {
+  //   throw new Error(
+  //     `Could not find the build directory: ${distPath}, make sure to build the client first`,
+  //   );
+  // }
+
+
+  // In production, DO NOTHING for frontend
   const distPath = path.resolve(__dirname, "..", "client", "dist");
 
   if (!fs.existsSync(distPath)) {
-    throw new Error(
-      `Could not find the build directory: ${distPath}, make sure to build the client first`,
-    );
+    console.warn("⚠️ Frontend not found. Running backend in API-only mode.");
+    return; // ✅ THIS STOPS THE CRASH
   }
+
 
   app.use(express.static(distPath));
   app.use("*", (_req, res) => {

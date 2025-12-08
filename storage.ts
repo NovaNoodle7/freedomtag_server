@@ -65,7 +65,7 @@ export interface IStorage {
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: string, updates: Partial<User>): Promise<User>;
   updateUserLastLogin(id: string): Promise<User>;
-  updateUserPassword(id: string, passwordHash: string): Promise<User>;
+  // updateUserPassword(id: string, passwordHash: string): Promise<User>;
   getUserRoles(userId: string): Promise<UserRole[]>;
   createUserRole(userRole: InsertUserRole): Promise<UserRole>;
   getUserWithRoles(userId: string): Promise<{ user: User; roles: UserRole[] } | undefined>;
@@ -776,19 +776,19 @@ export class DatabaseStorage implements IStorage {
     return user as User;
   }
 
-  async updateUserPassword(id: string, passwordHash: string): Promise<User> {
-    if (supabase) {
-      const { data, error } = await supabase.from('users').update({ password_hash: passwordHash }).eq('id', id).select().maybeSingle();
-      if (error) throw error;
-      if (!data) throw new Error('User not found');
-      return camelizeRow<User>(data as any);
-    }
+  // async updateUserPassword(id: string, passwordHash: string): Promise<User> {
+  //   if (supabase) {
+  //     const { data, error } = await supabase.from('users').update({ password_hash: passwordHash }).eq('id', id).select().maybeSingle();
+  //     if (error) throw error;
+  //     if (!data) throw new Error('User not found');
+  //     return camelizeRow<User>(data as any);
+  //   }
 
-    // @ts-ignore - bypass mixed-drizzle typing between shared and server
-    const [user] = (await db!.update(users as any).set({ passwordHash }).where(eq((users as any).id, id)).returning()) as any;
-    if (!user) throw new Error('User not found');
-    return user as User;
-  }
+  //   // @ts-ignore - bypass mixed-drizzle typing between shared and server
+  //   const [user] = (await db!.update(users as any).set({ passwordHash }).where(eq((users as any).id, id)).returning()) as any;
+  //   if (!user) throw new Error('User not found');
+  //   return user as User;
+  // }
 
   async getUserRoles(userId: string): Promise<UserRole[]> {
     if (supabase) {
