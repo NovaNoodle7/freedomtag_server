@@ -2,19 +2,12 @@ import "dotenv/config";
 import cors from "cors";
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
+// @ts-ignore - connect-pg-simple doesn't have types
+import connectPgSimple from "connect-pg-simple";
 import { registerRoutes } from "./routes";
-import { setupClientProxy, log } from "./vite";
+import { setupClientProxy, log } from "./client-proxy";
 import { createSumsubClient, DemoSumsubClient } from "./sumsub";
-
-// Debug: Log environment variables (masked for security)
-if (process.env.NODE_ENV === 'production') {
-  console.log('🔍 Environment Check:');
-  console.log('  NODE_ENV:', process.env.NODE_ENV);
-  console.log('  SESSION_SECRET:', process.env.SESSION_SECRET ? '✅ Set' : '❌ Missing');
-  console.log('  SUPABASE_URL:', process.env.SUPABASE_URL ? '✅ Set' : '❌ Missing');
-  console.log('  SUPABASE_KEY:', (process.env.SUPABASE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY) ? '✅ Set' : '❌ Missing');
-  console.log('  PORT:', process.env.PORT || '3000 (default)');
-}
+import "dotenv/config";
 
 
 const app = express();
@@ -22,12 +15,30 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
 // Allow requests from your frontend origin
-// Allow all origins (reflect the request origin)
-// Note: when credentials: true, we cannot use origin: '*' (wildcard) in browsers.
-// Using origin: true reflects the incoming origin and allows credentials to be sent.
+// Configured allowed origins for CORS
+const allowedOrigins = [
+  'https://comforting-paletas-589a05.netlify.app',
+  'http://localhost:5173', // Vite dev server
+  'http://localhost:3000', // Alternative dev port
+];
+
 app.use(
   cors({  
-    origin: true,
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+      
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        // In development, allow all origins for flexibility
+        if (process.env.NODE_ENV === 'development') {
+          callback(null, true);
+        } else {
+          callback(new Error('Not allowed by CORS'));
+        }
+      }
+    },
     credentials: true,
   })
 );
@@ -52,18 +63,58 @@ if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
   throw new Error('SESSION_SECRET environment variable is required in production');
 }
 
+// Configure session store - use PostgreSQL for production (serverless compatibility)
+// For Supabase, we can use the connection string from SUPABASE_URL
+let sessionStore: any = undefined;
+
+if (process.env.DATABASE_URL) {
+  // Use PostgreSQL session store if DATABASE_URL is available
+  const PgSession = connectPgSimple(session);
+  sessionStore = new PgSession({
+    conString: process.env.DATABASE_URL,
+    tableName: 'session', // Table name for sessions
+    createTableIfMissing: true, // Auto-create table if it doesn't exist
+  });
+  log('Using PostgreSQL session store');
+} else if (process.env.SUPABASE_DB_URL) {
+  // Use Supabase direct database connection URL if provided
+  // Format: postgresql://postgres.[project-ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres
+  const PgSession = connectPgSimple(session);
+  sessionStore = new PgSession({
+    conString: process.env.SUPABASE_DB_URL,
+    tableName: 'session',
+    createTableIfMissing: true,
+  });
+  log('Using Supabase PostgreSQL session store');
+} else {
+  log('WARNING: No database connection found. Using memory session store.');
+  log('Sessions will not persist in serverless environments. Set DATABASE_URL or SUPABASE_URL with SUPABASE_DB_PASSWORD.');
+}
+
 // Configure session middleware
-app.use(session({
+// Determine if we need cross-origin cookie settings
+const isProduction = process.env.NODE_ENV === 'production';
+const frontendUrl = process.env.FRONTEND_URL || allowedOrigins[0];
+const isCrossOrigin = isProduction && frontendUrl && !frontendUrl.includes('localhost');
+
+const sessionConfig: session.SessionOptions = {
   secret: process.env.SESSION_SECRET || 'dev-only-secret-' + Math.random().toString(36),
   resave: false,
   saveUninitialized: false,
+  store: sessionStore,
   cookie: {
-    secure: process.env.NODE_ENV === 'production',
+    secure: isProduction, // Must be true for sameSite: 'none'
     httpOnly: true,
     maxAge: 3600000, // 1 hour
-    sameSite: 'lax', // CSRF protection
+    sameSite: isCrossOrigin ? 'none' : 'lax', // 'none' for cross-site, 'lax' for same-site
   }
-}));
+};
+
+if (isCrossOrigin) {
+  log('Configured session cookies for cross-origin (sameSite: none, secure: true)');
+}
+
+app.use(session(sessionConfig));
 
 // Extend express session type
 declare module 'express-session' {
@@ -130,7 +181,7 @@ app.use((req, res, next) => {
     throw err;
   });
 
-  // importantly only setup vite in development and after
+  // importantly only setup client proxy in development and after
   // setting up all the other routes so the catch-all route
   // doesn't interfere with the other routes
   // In development the client is intended to be run separately and the server will
