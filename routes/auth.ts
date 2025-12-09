@@ -11,8 +11,6 @@ const router = express.Router();
   router.post('/auth/signup', async (req, res) => {
     try {
       const { email, password, fullName, phone, country, role } = req.body || {};
-      console.log("test=====>", {email, password, fullName, phone, country, role});
-      
       if (!email || !password || !fullName || !role) {
         return res.status(400).json({ error: 'email, password, fullName, and role are required' });
       }

@@ -17,9 +17,8 @@ app.use(express.urlencoded({ extended: false }));
 // Allow requests from your frontend origin
 // Configured allowed origins for CORS
 const allowedOrigins = [
-  'https://comforting-paletas-589a05.netlify.app',
+  'https://freedomtag-client.vercel.app',
   'http://localhost:5173', // Vite dev server
-  'http://localhost:3000', // Alternative dev port
 ];
 
 app.use(
