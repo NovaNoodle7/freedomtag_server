@@ -160,7 +160,8 @@ const router = express.Router();
       // Create session
       req.session.regenerate((err) => {
         if (err) {
-          return res.status(500).json({ error: 'Session error' });
+          console.error('[Philanthropist/Login] Session regenerate error:', err);
+          return res.status(500).json({ error: 'Session error', details: process.env.NODE_ENV === 'development' ? String(err) : undefined });
         }
 
         req.session.philanthropistAuth = {
@@ -168,10 +169,15 @@ const router = express.Router();
           email: philanthropist.email,
         };
 
+        console.log('[Philanthropist/Login] Session created for philanthropist:', philanthropist.id, 'SessionID:', req.sessionID);
+
         req.session.save((err) => {
           if (err) {
-            return res.status(500).json({ error: 'Session save error' });
+            console.error('[Philanthropist/Login] Session save error:', err);
+            return res.status(500).json({ error: 'Session save error', details: process.env.NODE_ENV === 'development' ? String(err) : undefined });
           }
+
+          console.log('[Philanthropist/Login] Session saved successfully for philanthropist:', philanthropist.id);
 
           res.json({
             id: philanthropist.id,
@@ -199,7 +205,10 @@ const router = express.Router();
 
   router.get('/philanthropist/me', async (req, res) => {
     try {
+      console.log('[Philanthropist/Me] SessionID:', req.sessionID, 'Has philanthropistAuth:', !!req.session.philanthropistAuth);
+      
       if (!req.session.philanthropistAuth) {
+        console.warn('[Philanthropist/Me] No philanthropistAuth in session. SessionID:', req.sessionID);
         return res.status(401).json({ error: 'Not authenticated' });
       }
 

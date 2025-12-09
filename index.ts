@@ -96,24 +96,50 @@ const isProduction = process.env.NODE_ENV === 'production';
 const frontendUrl = process.env.FRONTEND_URL || allowedOrigins[0];
 const isCrossOrigin = isProduction && frontendUrl && !frontendUrl.includes('localhost');
 
+// Warn if no session store is configured in production
+if (isProduction && !sessionStore) {
+  console.error('⚠️  CRITICAL: No session store configured in production!');
+  console.error('⚠️  Sessions will not persist across serverless invocations.');
+  console.error('⚠️  Set DATABASE_URL or SUPABASE_DB_URL environment variable.');
+}
+
 const sessionConfig: session.SessionOptions = {
   secret: process.env.SESSION_SECRET || 'dev-only-secret-' + Math.random().toString(36),
   resave: false,
   saveUninitialized: false,
   store: sessionStore,
+  name: 'freedomtag.sid', // Custom session name
   cookie: {
-    secure: isProduction, // Must be true for sameSite: 'none'
+    secure: isProduction, // Must be true for sameSite: 'none' and HTTPS
     httpOnly: true,
     maxAge: 3600000, // 1 hour
     sameSite: isCrossOrigin ? 'none' : 'lax', // 'none' for cross-site, 'lax' for same-site
+    // Don't set domain - allows cross-origin cookies
+    path: '/', // Ensure cookie is available for all paths
   }
 };
 
 if (isCrossOrigin) {
-  log('Configured session cookies for cross-origin (sameSite: none, secure: true)');
+  log('✅ Configured session cookies for cross-origin (sameSite: none, secure: true)');
+  log(`   Frontend: ${frontendUrl}`);
+} else {
+  log('✅ Configured session cookies for same-origin (sameSite: lax)');
 }
 
 app.use(session(sessionConfig));
+
+// Session debugging middleware (only in development or when DEBUG_SESSIONS is set)
+if (process.env.NODE_ENV === 'development' || process.env.DEBUG_SESSIONS === 'true') {
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/api')) {
+      const sessionId = req.sessionID;
+      const hasUserAuth = !!req.session.userAuth;
+      const hasPhilanthropistAuth = !!req.session.philanthropistAuth;
+      log(`[Session] ${req.method} ${req.path} - SessionID: ${sessionId?.substring(0, 8)}..., userAuth: ${hasUserAuth}, philanthropistAuth: ${hasPhilanthropistAuth}`);
+    }
+    next();
+  });
+}
 
 // Extend express session type
 declare module 'express-session' {

@@ -156,7 +156,8 @@ const router = express.Router();
       // Create session
       req.session.regenerate((err) => {
         if (err) {
-          return res.status(500).json({ error: 'Session error' });
+          console.error('[Auth/Login] Session regenerate error:', err);
+          return res.status(500).json({ error: 'Session error', details: process.env.NODE_ENV === 'development' ? String(err) : undefined });
         }
 
         req.session.userAuth = {
@@ -165,10 +166,15 @@ const router = express.Router();
           fullName: user.fullName,
         };
 
+        console.log('[Auth/Login] Session created for user:', user.id, 'SessionID:', req.sessionID);
+
         req.session.save((err) => {
           if (err) {
-            return res.status(500).json({ error: 'Session save error' });
+            console.error('[Auth/Login] Session save error:', err);
+            return res.status(500).json({ error: 'Session save error', details: process.env.NODE_ENV === 'development' ? String(err) : undefined });
           }
+
+          console.log('[Auth/Login] Session saved successfully for user:', user.id);
 
           res.json({
             user: {
@@ -193,7 +199,10 @@ const router = express.Router();
   // Get current user
   router.get('/auth/me', async (req, res) => {
     try {
+      console.log('[Auth/Me] SessionID:', req.sessionID, 'Has userAuth:', !!req.session.userAuth);
+      
       if (!req.session.userAuth) {
+        console.warn('[Auth/Me] No userAuth in session. SessionID:', req.sessionID);
         return res.status(401).json({ error: 'Not authenticated' });
       }
 
