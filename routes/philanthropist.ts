@@ -178,6 +178,44 @@ const router = express.Router();
           }
 
           console.log('[Philanthropist/Login] Session saved successfully for philanthropist:', philanthropist.id);
+          console.log('[Philanthropist/Login] SessionID after save:', req.sessionID);
+
+          // Check what express-session set (for debugging)
+          const existingCookie = res.getHeader('set-cookie');
+          if (existingCookie) {
+            console.log('[Philanthropist/Login] express-session set cookie:', typeof existingCookie === 'string' ? existingCookie : JSON.stringify(existingCookie));
+          }
+
+          // ALWAYS manually set cookie with correct cross-origin settings
+          // express-session might set it with wrong SameSite, so we override it
+          const cookieName = 'freedomtag.sid';
+          const cookieValue = req.sessionID;
+          const isProduction = process.env.NODE_ENV === 'production' || 
+                              process.env.RAILWAY_ENVIRONMENT === 'production' ||
+                              process.env.VERCEL === '1';
+          const frontendUrl = process.env.FRONTEND_URL || 'https://freedomtag-client.vercel.app';
+          const isCrossOrigin = frontendUrl && 
+                               (frontendUrl.startsWith('https://') || frontendUrl.startsWith('http://')) &&
+                               !frontendUrl.includes('localhost') &&
+                               !frontendUrl.includes('127.0.0.1');
+          
+          const cookieOptions: any = {
+            httpOnly: true,
+            maxAge: 3600000,
+            path: '/',
+            secure: isCrossOrigin ? true : isProduction, // Must be true for SameSite=None
+            sameSite: isCrossOrigin ? 'none' : 'lax',
+          };
+          
+          // Override any existing cookie with correct settings
+          res.cookie(cookieName, cookieValue, cookieOptions);
+          console.log('[Philanthropist/Login] Overrode cookie with sameSite:', cookieOptions.sameSite, 'secure:', cookieOptions.secure, 'isCrossOrigin:', isCrossOrigin);
+
+          // Log the Set-Cookie header that will be sent
+          res.on('finish', () => {
+            const setCookie = res.getHeader('set-cookie');
+            console.log('[Philanthropist/Login] Response Set-Cookie:', setCookie ? JSON.stringify(setCookie) : 'NOT SET!');
+          });
 
           res.json({
             id: philanthropist.id,

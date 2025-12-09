@@ -11,6 +11,11 @@ import "dotenv/config";
 
 
 const app = express();
+
+// CRITICAL: Trust proxy for serverless/proxy environments (Railway, Vercel, etc.)
+// This ensures Express correctly handles X-Forwarded-* headers and secure cookies
+app.set('trust proxy', 1);
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
@@ -92,32 +97,54 @@ if (process.env.DATABASE_URL) {
 
 // Configure session middleware
 // Determine if we need cross-origin cookie settings
-const isProduction = process.env.NODE_ENV === 'production';
+// Check if we're in production (Railway, Vercel, etc.) - not just NODE_ENV
+const isProduction = process.env.NODE_ENV === 'production' || 
+                     process.env.RAILWAY_ENVIRONMENT === 'production' ||
+                     process.env.VERCEL === '1' ||
+                     !process.env.NODE_ENV || // Assume production if not explicitly development
+                     (process.env.PORT && process.env.PORT !== '5173' && process.env.PORT !== '3000');
+
 const frontendUrl = process.env.FRONTEND_URL || allowedOrigins[0];
-const isCrossOrigin = isProduction && frontendUrl && !frontendUrl.includes('localhost');
+// If frontend URL is HTTPS and not localhost, it's cross-origin
+const isCrossOrigin = frontendUrl && 
+                     (frontendUrl.startsWith('https://') || frontendUrl.startsWith('http://')) &&
+                     !frontendUrl.includes('localhost') &&
+                     !frontendUrl.includes('127.0.0.1');
+
+log(`[Session Config] isProduction: ${isProduction}, isCrossOrigin: ${isCrossOrigin}, frontendUrl: ${frontendUrl}`);
+log(`[Session Config] Trust Proxy: ${app.get('trust proxy')}`);
+log(`[Session Config] Session Store: ${sessionStore ? 'CONFIGURED' : 'NOT CONFIGURED (using memory)'}`);
 
 // Warn if no session store is configured in production
 if (isProduction && !sessionStore) {
   console.error('⚠️  CRITICAL: No session store configured in production!');
   console.error('⚠️  Sessions will not persist across serverless invocations.');
+  console.error('⚠️  Even if cookies are sent, session data will be lost without a store.');
   console.error('⚠️  Set DATABASE_URL or SUPABASE_DB_URL environment variable.');
+  console.error('⚠️  Current env vars: DATABASE_URL=' + (process.env.DATABASE_URL ? 'SET' : 'NOT SET'));
+  console.error('⚠️  Current env vars: SUPABASE_DB_URL=' + (process.env.SUPABASE_DB_URL ? 'SET' : 'NOT SET'));
 }
 
 const sessionConfig: session.SessionOptions = {
   secret: process.env.SESSION_SECRET || 'dev-only-secret-' + Math.random().toString(36),
-  resave: false,
+  resave: true, // Changed to true to ensure cookie is always sent
   saveUninitialized: false,
   store: sessionStore,
   name: 'freedomtag.sid', // Custom session name
+  rolling: true, // Reset expiration on every request
   cookie: {
-    secure: isProduction, // Must be true for sameSite: 'none' and HTTPS
+    // For cross-origin, secure MUST be true (HTTPS only)
+    // For same-origin, secure can be false in development
+    secure: isCrossOrigin ? true : (isProduction ? true : false),
     httpOnly: true,
     maxAge: 3600000, // 1 hour
-    sameSite: isCrossOrigin ? 'none' : 'lax', // 'none' for cross-site, 'lax' for same-site
+    sameSite: isCrossOrigin ? ('none' as const) : ('lax' as const), // 'none' for cross-site, 'lax' for same-site
     // Don't set domain - allows cross-origin cookies
     path: '/', // Ensure cookie is available for all paths
   }
 };
+
+log(`[Session Config] Cookie settings: secure=${sessionConfig.cookie!.secure}, sameSite=${sessionConfig.cookie!.sameSite}, httpOnly=${sessionConfig.cookie!.httpOnly}`);
 
 if (isCrossOrigin) {
   log('✅ Configured session cookies for cross-origin (sameSite: none, secure: true)');
@@ -128,18 +155,42 @@ if (isCrossOrigin) {
 
 app.use(session(sessionConfig));
 
-// Session debugging middleware (only in development or when DEBUG_SESSIONS is set)
-if (process.env.NODE_ENV === 'development' || process.env.DEBUG_SESSIONS === 'true') {
-  app.use((req, res, next) => {
-    if (req.path.startsWith('/api')) {
-      const sessionId = req.sessionID;
-      const hasUserAuth = !!req.session.userAuth;
-      const hasPhilanthropistAuth = !!req.session.philanthropistAuth;
-      log(`[Session] ${req.method} ${req.path} - SessionID: ${sessionId?.substring(0, 8)}..., userAuth: ${hasUserAuth}, philanthropistAuth: ${hasPhilanthropistAuth}`);
+// Cookie and session debugging middleware
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api')) {
+    // ALWAYS log cookie headers for debugging
+    const cookieHeader = req.headers.cookie;
+    const origin = req.headers.origin;
+    const referer = req.headers.referer;
+    
+    log(`[Cookie Debug] ${req.method} ${req.path}`);
+    log(`  Origin: ${origin || 'none'}`);
+    log(`  Referer: ${referer || 'none'}`);
+    log(`  Request Cookie: ${cookieHeader || 'MISSING - Browser not sending cookie!'}`);
+    log(`  SessionID: ${req.sessionID}`);
+    log(`  Has userAuth: ${!!req.session.userAuth}`);
+    log(`  Has philanthropistAuth: ${!!req.session.philanthropistAuth}`);
+    
+    // Log cookie in response for login endpoints
+    if (req.path.includes('/login') || req.path.includes('/signup')) {
+      res.on('finish', () => {
+        const setCookie = res.getHeader('set-cookie');
+        log(`[Login Response] Set-Cookie header: ${setCookie ? JSON.stringify(setCookie) : 'MISSING!'}`);
+        log(`[Login Response] SessionID: ${req.sessionID}`);
+      });
     }
-    next();
-  });
-}
+    
+    // Log cookie for /me endpoints to see if cookie is being received
+    if (req.path.includes('/me')) {
+      log(`[Me Endpoint] Cookie received: ${cookieHeader ? 'YES' : 'NO'}`);
+      if (!cookieHeader) {
+        log(`[Me Endpoint] WARNING: No cookie in request! Browser may be blocking it.`);
+        log(`[Me Endpoint] Check: 1) CORS credentials, 2) Cookie SameSite settings, 3) Browser console for errors`);
+      }
+    }
+  }
+  next();
+});
 
 // Extend express session type
 declare module 'express-session' {
